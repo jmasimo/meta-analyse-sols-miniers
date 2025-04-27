@@ -1,0 +1,1265 @@
+---
+name: "meta-analyse-sols-miniers"
+title: "Analyse de la contamination minière des sols"
+author: "Joël Masimo Kabuanga"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    fig_caption: true
+    self_contained: true
+    mathjax: default
+    css: styles.css  
+navbar:
+  title: "Contamination minière"
+  left:
+    - text: "Accueil"
+      href: index.html
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#setwd("D:/Meta_analyse/csv/") 
+```
+
+
+Ce document présente le code utilisé pour la méta-analyse des environnements miniers, visant à :
+
+- Décrire la typologie des sites étudiés (type d’environnement minier et type de minerai exploité),
+- Analyser l’influence des caractéristiques géochimiques et climatiques sur la contamination métallique (Pb, Zn, Cu, As) et le drainage acide des mines (DAM),
+- Évaluer les principales contraintes édaphiques à la croissance végétale (pH, CE, CEC, MO),
+- Identifier les effets du climat et du statut d’exploitation minière sur la variabilité des sols contaminés.
+
+---
+
+**Auteur :** Joël Masimo Kabuanga  
+**Date :** Avril 2025  
+**Projet :** Méta-analyse sur la contamination des sols dans les environnements miniers
+
+---
+
+
+## I.1.	Typologie des environnements miniers étudiés
+
+```{r cars}
+# 📦 Chargement des bibliothèques
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(readxl)
+library(forcats)
+library(scales)  # pour les formats en %
+
+# 📂 Charger les données correctement
+df_freq_minerai_env <- read_excel("D:/Meta_analyse/csv/figure_site_mineria.xlsx")
+
+# 🧼 Nettoyage
+df_freq_minerai_env <- df_freq_minerai_env %>%
+  rename(
+    Modalite = Nom,
+    Frequence = `Nombre`,
+    Groupe = Quategorie
+  ) %>%
+  mutate(
+    Groupe = as.factor(Groupe),
+    Frequence = as.numeric(Frequence)
+  )
+
+# 🎨 Créer deux sous-tableaux avec pourcentages
+df_env <- df_freq_minerai_env %>%
+  filter(Groupe == "Environnement minier") %>%
+  mutate(
+    Pourcentage = Frequence / sum(Frequence),
+    Modalite = fct_reorder(Modalite, Pourcentage)
+  )
+
+df_minerai <- df_freq_minerai_env %>%
+  filter(Groupe == "Type de minerai exploité") %>%
+  mutate(
+    Pourcentage = Frequence / sum(Frequence),
+    Modalite = fct_reorder(Modalite, Pourcentage)
+  )
+
+# 📊 Figure A : Environnement minier (en %)
+fig_env_pct <- ggplot(df_env, aes(x = Modalite, y = Pourcentage)) +
+  geom_bar(stat = "identity", fill = "#EFC000FF") +
+  coord_flip() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "a) Proportion des sites par type d’environnement minier",
+    x = NULL,
+    y = "Pourcentage"
+  ) +
+  theme_classic()
+
+# 📊 Figure B : Catégorie de minerai (en %)
+fig_minerai_pct <- ggplot(df_minerai, aes(x = Modalite, y = Pourcentage)) +
+  geom_bar(stat = "identity", fill = "#EFC000FF") +
+  coord_flip() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "b) Proportion des sites par catégorie de minerai exploité",
+    x = NULL,
+    y = "Pourcentage"
+  ) +
+  theme_classic()
+
+# 📤 Affichage séparé
+print(fig_env_pct)
+print(fig_minerai_pct)
+
+
+```
+
+
+🗺️ A) Carte mondiale des sites analysés
+
+
+```{r fig.width=15, fig.height=15, echo=TRUE, message=FALSE, warning=FALSE}
+# 📦 Chargement des bibliothèques
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+library(cowplot)
+library(rnaturalearth)
+
+# 📂 Lire les données harmonisées depuis Excel
+df_sites <- read_excel("D:/Meta_analyse/csv/pays_sites_articles_worldname_FINAL.xlsx")
+
+# 🌍 Charger la carte du monde
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# 🔁 Harmoniser les noms pour la jointure
+world$name <- tolower(world$name)
+df_sites$Pays_harmonise <- tolower(df_sites$world_name_exacte)
+
+# 🔗 Fusion des données avec la carte
+carte_sites <- left_join(world, df_sites, by = c("name" = "Pays_harmonise"))
+
+# 🔣 Catégorisation améliorée
+catégoriser <- function(x) {
+    case_when(
+        is.na(x) | x == 0 ~ "Aucune donnée",
+        x <= 3 ~ "Faible (1–3)",
+        x <= 10 ~ "Moyenne (4–10)",
+        x > 10 ~ "Forte (>10)"
+    )
+}
+
+carte_sites <- carte_sites %>%
+    mutate(
+        Categorie_sites = catégoriser(Nombre_de_sites),
+        Categorie_articles = catégoriser(Nombre_d_articles)
+    )
+
+# 🎨 Palette de couleurs harmonisée
+palette_cat <- c(
+    "Aucune donnée" = "#d3d3d3",
+    "Faible (1–3)" = "#f4a582",
+    "Moyenne (4–10)" = "#92c5de",
+    "Forte (>10)" = "#0571b0"
+)
+
+# 📌 Forcer l'ordre des facteurs
+carte_sites$Categorie_sites <- factor(carte_sites$Categorie_sites, levels = names(palette_cat))
+carte_sites$Categorie_articles <- factor(carte_sites$Categorie_articles, levels = names(palette_cat))
+
+# 🗺️ Carte a : Nombre de sites
+map_sites <- ggplot(carte_sites) +
+    geom_sf(aes(fill = Categorie_sites), color = "white", size = 0.2) +
+    scale_fill_manual(values = palette_cat, na.value = "#d3d3d3", drop = FALSE) +
+    labs(title = "c) Sites miniers étudiés par pays : n = 234", fill = " ") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+
+# 🗺️ Carte b : Nombre d'articles
+map_articles <- ggplot(carte_sites) +
+    geom_sf(aes(fill = Categorie_articles), color = "white", size = 0.2) +
+    scale_fill_manual(values = palette_cat, na.value = "#d3d3d3", drop = FALSE) +
+    labs(title = "d) Articles publiés par pays : n = 141", fill = " ") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+
+# Combiner les deux cartes en colonne
+carte_finale <- plot_grid(map_sites, map_articles, ncol = 2, align = "v")
+
+# 📤 Afficher la figure finale
+print(carte_finale)
+
+# 💾 Export optionnel
+# ggsave("carte_sites_articles_verticale.png", carte_finale, width = 10, height = 12, dpi = 300)
+
+```
+
+```{r}
+library(gridExtra)
+# Rangée 1 : carte des sites + barres environnement
+row1 <- grid.arrange( fig_env_pct, fig_minerai_pct, ncol = 2, widths = c(2, 2))
+
+# Rangée 2 : carte des articles + barres minerai
+row2 <- grid.arrange(map_sites, map_articles,  ncol = 2, widths = c(5, 5))
+
+# Empiler verticalement
+final_layout <- grid.arrange(row1, row2, ncol = 1, heights = c(2.5, 7.5))  # Hauteur 60% pour les cartes
+
+
+# 💾 Export possible
+# ggsave("figure_sites_articles_environnement_minerai.pdf", final_layout, width = 14, height = 12)
+
+
+```
+
+
+
+
+
+
+## I.2.	Influence des caractéristiques géologiques sur la contamination en EMMT et le DAM
+
+```{r}
+ACP_32 <- read.csv2("D:/Meta_analyse/csv/ACP_01.csv", fileEncoding = "latin1")
+
+str(ACP_32)
+```
+
+
+### I.2.1  3.2.1.	Structuration géochimique ACP 1 Géochimie avec deux plots 
+
+```{r}
+# 📦 Chargement des bibliothèques
+library(FactoMineR)
+library(factoextra)
+library(ggplot2)
+library(cowplot)
+library(ggrepel)
+
+# === 1. Préparation des variables ===
+vars_geo <- c("SiO2", "Al2O3", "Fe2O3", "CaO", "pH", "Pb", "As", "Cu", "Zn")
+
+# S’assurer que les variables de groupe sont des facteurs
+ACP_32$`Type.de.roche` <- as.factor(ACP_32$`Type.de.roche`)
+ACP_32$`Minéraux.sulfurés.dominants` <- as.factor(ACP_32$`Minéraux.sulfurés.dominants`)
+
+# === 2. Données pour l'ACP géochimique
+ACP_data <- ACP_32[, c(vars_geo, "Type.de.roche", "Minéraux.sulfurés.dominants")]
+res.pca <- PCA(ACP_data, scale.unit = TRUE, quali.sup = c(ncol(ACP_data)-1, ncol(ACP_data)), graph = FALSE)
+
+# === 3. Biplot par Type de roche ===
+p11 <- fviz_pca_biplot(res.pca,
+                       repel = TRUE,
+                       geom.ind = "point",
+                       pointshape = 21,
+                       pointsize = 3,
+                       fill.ind = ACP_32$`Type.de.roche`,
+                       col.ind = "black",
+                       col.var = "black",
+                       addEllipses = TRUE,
+                       legend = "bottom",
+                       title = "a)") +
+  scale_fill_manual(name = "Type de roche", values = c(
+    "roche sédimentaire" = "#1f78b4",
+    "roche volcanique" = "#e377c2",
+    "roche métamorphique" = "#a6cee3",
+    "roche intrusive" = "#33a02c",
+    "mélange / complexe" = "#ff7f00",
+    "autres / anthropique" = "#fb9a99"
+  )) +
+  scale_shape_manual(name = "Type de roche", values = rep(21, 6)) +
+  guides(fill = guide_legend(override.aes = list(shape = 21)), shape = "none", color = "none") +
+  theme(legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.box = "horizontal")
+
+# Coordonnées des individus
+coord_ind <- as.data.frame(res.pca$ind$coord)
+coord_ind$label <- rownames(ACP_32)
+
+# Ajouter les étiquettes
+biplot_roche_main <- p11 + geom_text_repel(data = coord_ind,
+                                           aes(x = Dim.1, y = Dim.2, label = label),
+                                           size = 3, color = "black", max.overlaps = 100)
+
+# Étape 1 : identifier les groupes avec ≥ 3 individus
+table_sulfures <- table(ACP_32$`Minéraux.sulfurés.dominants`)
+valid_sulfures <- names(table_sulfures[table_sulfures >= 3])
+
+# Étape 2 : fviz_pca_biplot avec sélection des groupes pour ellipses uniquement
+p12 <- fviz_pca_biplot(res.pca,
+                       repel = TRUE,
+                       geom.ind = "point",
+                       pointshape = 21,  # ✅ important
+                       pointsize = 3,
+                       fill.ind = ACP_32$`Minéraux.sulfurés.dominants`,
+                       col.ind = "black",
+                       col.var = "black",
+                       addEllipses = TRUE,
+                       select.ind = list(group = valid_sulfures),  # ✅ uniquement pour les groupes valides
+                       legend = "bottom",
+                       title = "b)") +
+  scale_fill_manual(name = "Minéraux sulfurés", values = c(
+    "Autres sulfures Fe/Ni" = "#E69F00",
+    "Complexes multi-éléments" = "#009E73",
+    "Pyrite dominante" = "#56B4E9"
+  )) +
+  scale_color_manual(name = "Minéraux sulfurés", values = c(
+    "Autres sulfures Fe/Ni" = "#E69F00",
+    "Complexes multi-éléments" = "#009E73",
+    "Pyrite dominante" = "#56B4E9"
+  )) +
+  scale_shape_manual(name = "Minéraux sulfurés", values = rep(21, 3)) +
+  guides(fill = guide_legend(override.aes = list(shape = 21)),
+         shape = "none",
+         color = "none") +
+  theme(legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.box = "horizontal")
+
+
+# Coordonnées pour ajout de texte
+coord_ind2 <- as.data.frame(res.pca$ind$coord)
+coord_ind2$label <- rownames(ACP_32)
+
+# Ajouter les étiquettes
+biplot_sulfures_main <- p12 + geom_text_repel(data = coord_ind2,
+                                              aes(x = Dim.1, y = Dim.2, label = label),
+                                              size = 3, color = "black", max.overlaps = 100)
+
+# === 5. Combinaison des figures
+final_plot_sulfure <- plot_grid(biplot_roche_main, biplot_sulfures_main, ncol = 2, align = "hv")
+
+# === 6. Affichage
+print(final_plot_sulfure)
+
+# === 7. Export optionnel
+# ggsave("ACP_roche_sulfures_legendes_sep.pdf", final_plot_sulfure, width = 14, height = 8, dpi = 300)
+
+```
+
+```{r}
+# 📦 Chargement des bibliothèques
+library(ggplot2)
+library(FactoMineR)
+library(factoextra)
+library(cowplot)
+
+# === Préparation des données ===
+# Variables géochimiques
+vars_geo <- c("SiO2", "Al2O3", "Fe2O3", "CaO", "pH", "Pb", "As", "Cu", "Zn")
+# Variables climatiques
+vars_climat <- c("prec_ann", "temp_moy", "amplitude")
+
+# Données pour ACP géochimie seule
+ACP_geo <- ACP_32[, c(vars_geo, "Type.de.roche")]
+res.pca1 <- PCA(ACP_geo, 
+                scale.unit = TRUE,     # ✅ centrage-réduction automatique
+                quali.sup = ncol(ACP_geo), 
+                graph = FALSE)
+
+# Données pour ACP géochimie + climat
+vars_total <- c(vars_geo, vars_climat)
+ACP_climat <- ACP_32[, c(vars_total, "Type.de.roche")]
+res.pca2 <- PCA(ACP_climat, 
+                scale.unit = TRUE,     # ✅ idem ici
+                quali.sup = ncol(ACP_climat), 
+                graph = FALSE)
+
+# === 1. Extraire une légende partagée (couleur = type de roche uniquement) ===
+legend_shared <- get_legend(
+  fviz_pca_biplot(res.pca2,
+                  repel = TRUE,
+                  habillage = "Type.de.roche",
+                  addEllipses = TRUE,
+                  palette = "Dark2",
+                  col.var = "black",
+                  arrowsize = 0.7,
+                  legend = "right",
+                  title = NULL) +
+    guides(fill = guide_legend(ncol = 3)) +
+    theme(legend.direction = "horizontal")
+)
+
+# === 2. Créer les deux biplots sans légende ===
+biplot_geo_noleg <- fviz_pca_biplot(res.pca1,
+                                    repel = TRUE,
+                                    habillage = "Type.de.roche",
+                                    addEllipses = TRUE,
+                                    palette = "Dark2",
+                                    col.var = "black",
+                                    arrowsize = 0.7,
+                                    legend = "none",
+                                    title = "Géochimie")
+
+biplot_climat_noleg <- fviz_pca_biplot(res.pca2,
+                                       repel = TRUE,
+                                       habillage = "Type.de.roche",
+                                       addEllipses = TRUE,
+                                       palette = "Dark2",
+                                       col.var = "black",
+                                       arrowsize = 0.7,
+                                       legend = "none",
+                                       title = "Géochimie et climat")
+
+# === 3. Combinaison côte à côte des deux biplots sans légende ===
+plots_combined <- plot_grid(biplot_geo_noleg, biplot_climat_noleg,
+                            labels = c("a", "b"),
+                            label_size = 14,
+                            ncol = 2,
+                            align = "hv")
+
+# === 4. Ajouter la légende en bas ===
+final_plot <- plot_grid(plots_combined, legend_shared, 
+                        ncol = 1, 
+                        rel_heights = c(1, 0.3))
+
+# === 5. Affichage
+print(final_plot)
+
+# === 6. Export (facultatif)
+# ggsave("ACP_comparaison_legende_bas.pdf", final_plot, width = 14, height = 8, dpi = 300)
+
+```
+
+
+### I.2.1.	Structuration géochimique ACP 02 géochimie + climat
+
+```{r}
+library(factoextra)
+library(ggplot2)
+library(ggrepel)
+
+# Préparer les groupes et étiquettes
+groupes <- ACP_32$Type.de.roche
+etiquettes <- rownames(ACP_32)  #
+
+# Graphe de base avec les points
+p <- fviz_pca_biplot(res.pca2,
+                     repel = TRUE,
+                     geom.ind = "point",
+                     pointshape = 21,
+                     pointsize = 3,
+                     fill.ind = groupes,
+                     col.ind = "black",
+                     col.var = "black",
+                     addEllipses = TRUE,
+                     legend = "bottom",
+                     title = "") +
+  scale_fill_manual(
+    name = "Type de roche",
+    values = c(
+      "roche sédimentaire" = "#1f78b4",
+      "roche volcanique" = "#e377c2",
+      "roche métamorphique" = "#a6cee3",
+      "roche intrusive" = "#33a02c",
+      "mélange / complexe" = "#ff7f00",
+      "autres / anthropique" = "#fb9a99"
+    )
+  ) +
+  scale_shape_manual(
+    name = "Type de roche",
+    values = c(
+      "roche sédimentaire" = 21,
+      "roche volcanique" = 24,
+      "roche métamorphique" = 22,
+      "roche intrusive" = 23,
+      "mélange / complexe" = 25,
+      "autres / anthropique" = 8
+    )
+  ) +
+  guides(
+    fill = guide_legend(override.aes = list(shape = 21)),
+    shape = guide_legend(override.aes = list(fill = NA)),
+    color = "none"
+  ) +
+  theme(legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.box = "horizontal")
+
+# Coordonnées des individus
+coord_ind <- as.data.frame(res.pca2$ind$coord)
+coord_ind$label <- etiquettes
+
+# Ajouter les étiquettes sans chevauchement
+p + geom_text_repel(data = coord_ind,
+                    aes(x = Dim.1, y = Dim.2, label = label),
+                    size = 3,
+                    color = "black",
+                    max.overlaps = 100)
+
+```
+
+
+
+### I.2.2.	Analyse explicative des facteurs de contamination
+
+```{r}
+data_33 <- read.csv2("D:/Meta_analyse/csv/Regression.csv", fileEncoding = "latin1")
+
+str(data_33)
+```
+
+
+```{r}
+# 📦 Chargement des packages
+library(AICcmodavg)
+
+# 🌡 Mise à l'échelle des variables continues
+data_scaled <- data_33
+vars_cont <- c("Fe2O3", "CaO", "SiO2", "Al2O3", "temp_moy", "prec_ann", "amplitude")
+data_scaled[vars_cont] <- lapply(data_scaled[vars_cont], scale)
+
+# 🔄 Transformation log10 des concentrations (ajout d’un epsilon pour éviter log(0))
+epsilon <- 1
+data_scaled$log_Zn <- log10(data_scaled$Zn + epsilon)
+data_scaled$log_Cu <- log10(data_scaled$Cu + epsilon)
+data_scaled$log_As <- log10(data_scaled$As + epsilon)
+data_scaled$log_Pb <- log10(data_scaled$Pb + epsilon)
+
+# 🧾 Transformation des variables catégorielles
+data_scaled$type_roche <- as.factor(data_scaled$Type.de.roche)
+data_scaled$sulfures <- as.factor(data_scaled$Mineraux.sulfures.dominants)
+data_scaled$env_mine <- as.factor(data_scaled$Type.d.environnement.minier)
+data_scaled$statut <- as.factor(data_scaled$Statut.d.exploitation)
+
+# ----------------------------
+# 🔹 Modèles pour pH
+# ----------------------------
+models_pH <- list(
+  M1 = lm(pH ~ Fe2O3 + CaO + SiO2, data = data_scaled),
+  M2 = lm(pH ~ Fe2O3 * temp_moy + CaO, data = data_scaled),
+  M3 = lm(pH ~ Fe2O3 + CaO + sulfures, data = data_scaled),
+  M4 = lm(pH ~ Fe2O3 * sulfures + CaO * env_mine, data = data_scaled)
+)
+aictab(cand.set = models_pH, modnames = names(models_pH))
+
+# ----------------------------
+# 🔹 Modèles pour log(Zn)
+# ----------------------------
+models_logZn <- list(
+  M1 = lm(log_Zn ~ Fe2O3 + CaO + SiO2, data = data_scaled),
+  M2 = lm(log_Zn ~ Fe2O3 * temp_moy + CaO, data = data_scaled),
+  M3 = lm(log_Zn ~ Fe2O3 + CaO + sulfures, data = data_scaled),
+  M4 = lm(log_Zn ~ Fe2O3 + SiO2 + amplitude + type_roche + sulfures + env_mine, data = data_scaled)
+)
+aictab(cand.set = models_logZn, modnames = names(models_logZn))
+
+# ----------------------------
+# 🔹 Modèles pour log(Cu)
+# ----------------------------
+models_logCu <- list(
+  M1 = lm(log_Cu ~ Fe2O3 + CaO + SiO2, data = data_scaled),
+  M2 = lm(log_Cu ~ Fe2O3 * temp_moy + CaO, data = data_scaled),
+  M3 = lm(log_Cu ~ Fe2O3 * type_roche + CaO, data = data_scaled),
+  M4 = lm(log_Cu ~ Fe2O3 + CaO + amplitude + statut + type_roche, data = data_scaled)
+)
+aictab(cand.set = models_logCu, modnames = names(models_logCu))
+
+# ----------------------------
+# 🔹 Modèles pour log(As)
+# ----------------------------
+models_logAs <- list(
+  M1 = lm(log_As ~ Fe2O3 + CaO + SiO2, data = data_scaled),
+  M2 = lm(log_As ~ Fe2O3 + CaO + temp_moy + amplitude, data = data_scaled),
+  M3 = lm(log_As ~ Fe2O3 + CaO + amplitude + statut + type_roche, data = data_scaled),
+  M4 = lm(log_As ~ Fe2O3 + SiO2 + amplitude + type_roche + sulfures + env_mine, data = data_scaled)
+)
+aictab(cand.set = models_logAs, modnames = names(models_logAs))
+
+# ----------------------------
+# 🔹 Modèles pour log(Pb)
+# ----------------------------
+models_logPb <- list(
+  M1 = lm(log_Pb ~ Fe2O3 + CaO + SiO2, data = data_scaled),
+  M2 = lm(log_Pb ~ CaO * prec_ann + Fe2O3, data = data_scaled),
+  M3 = lm(log_Pb ~ Fe2O3 + CaO + env_mine, data = data_scaled),
+  M4 = lm(log_Pb ~ Fe2O3 * sulfures + prec_ann, data = data_scaled)
+)
+aictab(cand.set = models_logPb, modnames = names(models_logPb))
+
+
+```
+
+
+```{r fig.width=8.0, fig.height=7, echo=TRUE}
+# 📊 Meilleur modèle pour le pH : M1
+best_model_pH <- models_pH$M1
+summary(best_model_pH)
+par(mfrow = c(2, 2))
+plot(best_model_pH)
+```
+
+```{r fig.width=8.0, fig.height=7, echo=TRUE}
+# 📊 Meilleur modèle pour le Zn : M4
+best_model_Zn <- models_logZn$M4
+summary(best_model_Zn)
+par(mfrow = c(2, 2))
+plot(best_model_Zn)
+```
+
+
+
+```{r fig.width=8.0, fig.height=7, echo=TRUE}
+# 📊 Meilleur modèle pour le Cu : M4
+best_model_Cu <- models_logCu$M4
+summary(best_model_Cu)
+par(mfrow = c(2, 2))
+plot(best_model_Cu)
+```
+
+```{r fig.width=8.0, fig.height=7, echo=TRUE}
+# 📊 Meilleur modèle pour le As : M4
+best_model_As <- models_logAs$M4
+summary(best_model_As)
+par(mfrow = c(2, 2))
+plot(best_model_As)
+```
+
+```{r fig.width=8.0, fig.height=7, echo=TRUE}
+# 📊 Meilleur modèle pour le Pb : M3
+best_model_Pb <- models_logPb$M3
+summary(best_model_Pb)
+par(mfrow = c(2, 2))
+plot(best_model_Pb)
+
+```
+
+
+
+
+## I.3.	Contraintes édaphiques à la croissance végétale selon type d’environnement minier et le climat
+
+
+```{r}
+# 📂 Charger les données correctement
+df_contraintes <- read_excel("D:/Meta_analyse/csv/bd_final_standardise_minerai_harmonise_v2.xlsx")
+
+str(df_contraintes)
+
+```
+### I.3.1.	Contraintes édaphiques à la croissance végétale selon type d’environnement minier 
+
+```{r fig.width=15, fig.height=15, echo=TRUE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(multcompView)
+library(cowplot)
+library(FSA)
+library(rstatix)
+
+variables <- c("pH", "CE", "CEC", "MO", "Pb", "As", "Cu", "Zn")
+anova_vars <- c("pH", "Cu", "Zn")
+kruskal_vars <- c("CE", "CEC", "MO", "Pb", "As")
+
+# Unités associées
+unités <- c(
+  pH = "pH",
+  CE = "Log10(CE, mS/cm)",
+  CEC = "Log10(CEC, cmol(+)/kg)",
+  MO = "Log10(MO, %)",
+  Pb = "Log10(Pb, mg/kg)",
+  As = "Log10(As, mg/kg)",
+  Cu = "Log10(Cu, mg/kg)",
+  Zn = "Log10(Zn, mg/kg)"
+)
+
+x_labels <- c(
+  "Mine active",
+  "Mine restaurée",
+  "Site post-minier - Abandonné",
+  "Site témoin non dégradé - Non exploité",
+  "Zone affectée par un DMA"
+)
+
+plots <- lapply(variables, function(var) {
+  df <- df_contraintes %>%
+    filter(!is.na(!!sym(var)), !is.na(EnvM)) %>%
+    mutate(value = if (var == "pH") !!sym(var) else log10(!!sym(var)),
+           EnvM_clean = gsub("-", " ", EnvM))
+
+  show_letters <- TRUE
+
+  if (var %in% anova_vars) {
+    res <- aov(value ~ EnvM_clean, data = df)
+    p_val <- summary(res)[[1]][["Pr(>F)"]][1]
+    if (p_val < 0.05) {
+      tukey <- TukeyHSD(res)
+      groups <- multcompLetters(tukey$EnvM_clean[, "p adj"])$Letters
+    } else {
+      show_letters <- FALSE
+      groups <- rep("", length(unique(df$EnvM_clean)))
+      names(groups) <- unique(df$EnvM_clean)
+    }
+    subtitle <- paste("ANOVA — F =", round(summary(res)[[1]][["F value"]][1], 2), "; p =", format.pval(p_val, digits = 2, eps = .001))
+  } else {
+    res <- kruskal.test(value ~ EnvM_clean, data = df)
+    if (res$p.value < 0.05) {
+      posthoc <- dunn_test(df, value ~ EnvM_clean, p.adjust.method = "bonferroni")
+      groups <- multcompLetters(setNames(posthoc$p.adj, paste(posthoc$group1, posthoc$group2, sep = "-")))$Letters
+    } else {
+      show_letters <- FALSE
+      groups <- rep("", length(unique(df$EnvM_clean)))
+      names(groups) <- unique(df$EnvM_clean)
+    }
+    subtitle <- paste("Kruskal-Wallis — Chi² =", round(res$statistic, 2), "; p =", format.pval(res$p.value, digits = 2, eps = .001))
+  }
+
+  df$group <- groups[as.character(df$EnvM_clean)]
+
+  p <- ggplot(df, aes(x = EnvM, y = value)) +
+    geom_boxplot(fill = "#FBE3D6") +
+    stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+    coord_flip() +
+    scale_x_discrete(labels = x_labels) +
+    labs(
+      title = paste0(var, " "),
+      subtitle = subtitle,
+      x = "",
+      y = unités[[var]]
+    ) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+      plot.subtitle = element_text(hjust = 0, size = 12)
+    )
+
+  if (show_letters) {
+    p <- p + geom_text(aes(label = group, y = max(value, na.rm = TRUE) + 0.2), vjust = 0)
+  }
+
+  return(p)
+})
+
+# 📊 Affichage en grille
+plot_grid(plotlist = plots, ncol = 2)
+
+
+```
+
+### I.3.2.	Contraintes édaphiques à la croissance végétale selon  le climat
+
+
+```{r}
+# 📦 Chargement des packages
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
+library(readxl)
+
+
+# 📂 Importation des données
+df_Zn <- read_excel("D:/Meta_analyse/csv/Zn.xlsx")
+df_Cu <- read_excel("D:/Meta_analyse/csv/Cu.xlsx")
+df_As <- read_excel("D:/Meta_analyse/csv/As.xlsx")  
+df_Pb <- read_excel("D:/Meta_analyse/csv/Pb.xlsx")  
+df_MO <- read_excel("D:/Meta_analyse/csv/MO.xlsx")  
+df_CEC <- read_excel("D:/Meta_analyse/csv/CEC.xlsx")  
+df_CE <- read_excel("D:/Meta_analyse/csv/CE.xlsx") 
+df_pH <- read_excel("D:/Meta_analyse/csv/pH.xlsx")  
+
+# 📊 Vérification de la structure des fichiers
+str(df_Zn)  # Structure du fichier Zn.xlsx
+str(df_Cu)  # Structure du fichier Cu.xlsx
+str(df_As)  # Structure du fichier As.xlsx
+str(df_Pb)  # Structure du fichier Pb.xlsx
+str(df_MO)  # Structure du fichier MO.xlsx
+str(df_CEC)  # Structure du fichier CEC.xlsx
+str(df_CE)  # Structure du fichier CE.xlsx
+str(df_pH)  # Structure du fichier pH.xlsx
+
+#  Vérification des valeurs manquantes
+#sapply(list(df_Zn, df_Cu, df_As, df_Pb, df_MO, df_CEC, df_CE, df_pH), function(df) sum(is.na(df)))
+
+```
+
+```{r}
+# 📊 Analyse ANOVA pour le pH en fonction du Climat
+anova_ph_climat <- aov(pH ~ Climat, data = df_pH)
+summary_anova_ph_climat <- summary(anova_ph_climat)
+f_value_ph_climat <- summary_anova_ph_climat[[1]][["F value"]][1]
+p_value_ph_climat <- summary_anova_ph_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_ph_climat) && p_value_ph_climat < 0.05) {
+  tukey_ph_climat <- TukeyHSD(anova_ph_climat)
+  tukey_groups_ph_climat <- multcompLetters(tukey_ph_climat$Climat[, "p adj"])$Letters
+  df_pH$group_climat <- tukey_groups_ph_climat[as.character(df_pH$Climat)]
+} else {
+  df_pH$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Création du boxplot pour le pH avec Climat
+p_ph_climat <- ggplot(df_pH, aes(x = Climat, y = pH)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "pH",
+       subtitle = paste("\nANOVA — F =", round(f_value_ph_climat, 2), "; p =", format(p_value_ph_climat, digits = 2, eps=0.001)),
+       x = "", y = "pH") +
+  geom_text(aes(label = group_climat, y = max(pH, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de l'ANOVA
+summary_anova_ph_climat
+par(mfrow = c(2, 2))
+plot(anova_ph_climat)
+
+# 📌 Affichage du boxplot
+print(p_ph_climat)
+```
+
+```{r}
+# 📊 Transformation logarithmique des valeurs de CE
+df_CE <- df_CE %>%
+  mutate(log_CE = log10(CE + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(CE) en fonction du Climat
+anova_log_ce_climat <- aov(log_CE ~ Climat, data = df_CE)
+summary_anova_log_ce_climat <- summary(anova_log_ce_climat)
+f_value_log_ce_climat <- summary_anova_log_ce_climat[[1]][["F value"]][1]
+p_value_log_ce_climat <- summary_anova_log_ce_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_ce_climat) && p_value_log_ce_climat < 0.05) {
+  tukey_log_ce_climat <- TukeyHSD(anova_log_ce_climat)
+  tukey_groups_log_ce_climat <- multcompLetters(tukey_log_ce_climat$Climat[, "p adj"])$Letters
+  df_CE$group_climat <- tukey_groups_log_ce_climat[as.character(df_CE$Climat)]
+} else {
+  df_CE$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Test de Kruskal-Wallis pour le log(CE) en fonction du Climat
+kruskal_log_ce_climat <- kruskal.test(log_CE ~ Climat, data = df_CE)
+kw_stat_ce <- kruskal_log_ce_climat$statistic
+kw_pvalue_ce <- kruskal_log_ce_climat$p.value
+
+# 📌 Vérifier si le test est significatif avant le post-hoc
+if (!is.na(kw_pvalue_ce) && kw_pvalue_ce < 0.05) {
+  posthoc_log_ce_climat <- dunn_test(df_CE, log_CE ~ Climat, p.adjust.method = "bonferroni")
+  posthoc_groups_log_ce_climat <- multcompLetters(setNames(posthoc_log_ce_climat$p.adj,
+                                                            paste(posthoc_log_ce_climat$group1, posthoc_log_ce_climat$group2, sep = "-")))$Letters
+  df_CE$group_climat <- posthoc_groups_log_ce_climat[as.character(df_CE$Climat)]
+} else {
+  df_CE$group_climat <- NA  # Pas de groupe car Kruskal-Wallis non significatif
+}
+
+# 📊 Création du boxplot pour le log(CE) avec Climat
+p_log_ce_climat <- ggplot(df_CE, aes(x = Climat, y = log_CE)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "CE",
+       subtitle = paste("\nKruskal−Wallis — Chi² =", round(kw_stat_ce, 2), "; p =", format(kw_pvalue_ce, digits = 2, eps=0.001)),
+       x = "", y = "Log(CE en mS/cm)") +
+  geom_text(aes(label = group_climat, y = max(log_CE, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de Kruskal-Wallis
+kruskal_log_ce_climat
+par(mfrow = c(2, 2))
+hist(df_CE$log_CE, main = "Distribution Log-CE", col = "#E69F00", border = "black")
+qqnorm(df_CE$log_CE)
+qqline(df_CE$log_CE, col = "red")
+boxplot(df_CE$log_CE ~ df_CE$Climat, main = "Boxplot Log(CE)", col = "#56B4E9")
+
+# 📌 Affichage du boxplot
+print(p_log_ce_climat)
+```
+
+
+
+```{r}
+# 📊 Transformation logarithmique des valeurs de CEC
+df_CEC <- df_CEC %>%
+  mutate(log_CEC = log10(CEC + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(CEC) en fonction du Climat
+anova_log_cec_climat <- aov(log_CEC ~ Climat, data = df_CEC)
+summary_anova_log_cec_climat <- summary(anova_log_cec_climat)
+f_value_log_cec_climat <- summary_anova_log_cec_climat[[1]][["F value"]][1]
+p_value_log_cec_climat <- summary_anova_log_cec_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_cec_climat) && p_value_log_cec_climat < 0.05) {
+  tukey_log_cec_climat <- TukeyHSD(anova_log_cec_climat)
+  tukey_groups_log_cec_climat <- multcompLetters(tukey_log_cec_climat$Climat[, "p adj"])$Letters
+  df_CEC$group_climat <- tukey_groups_log_cec_climat[as.character(df_CEC$Climat)]
+} else {
+  df_CEC$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Test de Kruskal-Wallis pour le log(CEC) en fonction du Climat
+kruskal_log_cec_climat <- kruskal.test(log_CEC ~ Climat, data = df_CEC)
+kw_stat_cec <- kruskal_log_cec_climat$statistic
+kw_pvalue_cec <- kruskal_log_cec_climat$p.value
+
+# 📌 Vérifier si le test est significatif avant le post-hoc
+if (!is.na(kw_pvalue_cec) && kw_pvalue_cec < 0.05) {
+  posthoc_log_cec_climat <- dunn_test(df_CEC, log_CEC ~ Climat, p.adjust.method = "bonferroni")
+  posthoc_groups_log_cec_climat <- multcompLetters(setNames(posthoc_log_cec_climat$p.adj,
+                                                            paste(posthoc_log_cec_climat$group1, posthoc_log_cec_climat$group2, sep = "-")))$Letters
+  df_CEC$group_climat <- posthoc_groups_log_cec_climat[as.character(df_CEC$Climat)]
+} else {
+  df_CEC$group_climat <- NA  # Pas de groupe car Kruskal-Wallis non significatif
+}
+
+# 📊 Création du boxplot pour le log(CEC) avec Climat
+p_log_cec_climat <- ggplot(df_CEC, aes(x = Climat, y = log_CEC)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "CEC",
+       subtitle = paste("\nKruskal−Wallis — Chi² =", round(kw_stat_cec, 2), "; p =", format(kw_pvalue_cec, digits = 2, eps=0.001)),
+       x = "", y = "Log(CEC en cmol(+)/kg)") +
+  geom_text(aes(label = group_climat, y = max(log_CEC, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de Kruskal-Wallis
+kruskal_log_cec_climat
+par(mfrow = c(2, 2))
+hist(df_CEC$log_CEC, main = "Distribution Log-CEC", col = "#E69F00", border = "black")
+qqnorm(df_CEC$log_CEC)
+qqline(df_CEC$log_CEC, col = "red")
+boxplot(df_CEC$log_CEC ~ df_CEC$Climat, main = "Boxplot Log(CEC)", col = "#56B4E9")
+
+# 📌 Affichage du boxplot
+print(p_log_cec_climat)
+```
+
+
+
+```{r}
+# 📊 Transformation logarithmique des valeurs de MO
+df_MO <- df_MO %>%
+  mutate(log_MO = log10(MO + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(MO) en fonction du Climat
+anova_log_mo_climat <- aov(log_MO ~ Climat, data = df_MO)
+summary_anova_log_mo_climat <- summary(anova_log_mo_climat)
+f_value_log_mo_climat <- summary_anova_log_mo_climat[[1]][["F value"]][1]
+p_value_log_mo_climat <- summary_anova_log_mo_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_mo_climat) && p_value_log_mo_climat < 0.05) {
+  tukey_log_mo_climat <- TukeyHSD(anova_log_mo_climat)
+  tukey_groups_log_mo_climat <- multcompLetters(tukey_log_mo_climat$Climat[, "p adj"])$Letters
+  df_MO$group_climat <- tukey_groups_log_mo_climat[as.character(df_MO$Climat)]
+} else {
+  df_MO$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Création du boxplot pour le log(MO) avec Climat
+#p_log_mo_climat <- ggplot(df_MO, aes(x = Climat, y = log_MO)) +
+#  geom_boxplot(fill = "#FBE3D6") +
+#  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+#  theme_classic() + coord_flip() +
+#  labs(title = "MO",
+#       subtitle = paste("\nF =", round(f_value_log_mo_climat, 2), "; p =", format(p_value_log_mo_climat, scientific = TRUE)),
+#       x = "", y = "Log(MO en %)") +
+#  geom_text(aes(label = group_climat, y = max(log_MO, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de l'ANOVA
+ summary_anova_log_mo_climat  
+par(mfrow = c(2, 2))  
+plot(anova_log_mo_climat)  
+
+# 📌 Affichage du boxplot
+# print(p_log_mo_climat)  
+
+
+
+# 📊 Test de Kruskal-Wallis pour le log(MO) en fonction du Climat
+kruskal_log_mo_climat <- kruskal.test(log_MO ~ Climat, data = df_MO)
+kw_stat_mo <- kruskal_log_mo_climat$statistic
+kw_pvalue_mo <- kruskal_log_mo_climat$p.value
+
+# 📌 Vérifier si le test est significatif avant le post-hoc
+if (!is.na(kw_pvalue_mo) && kw_pvalue_mo < 0.05) {
+  posthoc_log_mo_climat <- dunn_test(df_MO, log_MO ~ Climat, p.adjust.method = "bonferroni")
+  posthoc_groups_log_mo_climat <- multcompLetters(setNames(posthoc_log_mo_climat$p.adj,
+                                                            paste(posthoc_log_mo_climat$group1, posthoc_log_mo_climat$group2, sep = "-")))$Letters
+  df_MO$group_climat <- posthoc_groups_log_mo_climat[as.character(df_MO$Climat)]
+} else {
+  df_MO$group_climat <- NA  # Pas de groupe car Kruskal-Wallis non significatif
+}
+
+# 📊 Création du boxplot pour le log(MO) avec Climat
+p_log_mo_climat <- ggplot(df_MO, aes(x = Climat, y = log_MO)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "MO",
+       subtitle = paste("\nKruskal−Wallis — Chi² =", round(kw_stat_mo, 2), "; p =", format(kw_pvalue_mo, digits = 2, eps=0.001)),
+       x = "", y = "Log(MO en %)") +
+  geom_text(aes(label = group_climat, y = max(log_MO, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de Kruskal-Wallis
+kruskal_log_mo_climat
+par(mfrow = c(2, 2))
+hist(df_MO$log_MO, main = "Distribution Log-MO", col = "#E69F00", border = "black")
+qqnorm(df_MO$log_MO)
+qqline(df_MO$log_MO, col = "red")
+boxplot(df_MO$log_MO ~ df_MO$Climat, main = "Boxplot Log(MO)", col = "#56B4E9")
+
+# 📌 Affichage du boxplot
+print(p_log_mo_climat)
+
+```
+```{r}
+# 📊 Transformation logarithmique des valeurs de Pb
+df_Pb <- df_Pb %>%
+  mutate(log_Pb = log10(Pb + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(Pb) en fonction du Climat
+anova_log_pb_climat <- aov(log_Pb ~ Climat, data = df_Pb)
+summary_anova_log_pb_climat <- summary(anova_log_pb_climat)
+f_value_log_pb_climat <- summary_anova_log_pb_climat[[1]][["F value"]][1]
+p_value_log_pb_climat <- summary_anova_log_pb_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_pb_climat) && p_value_log_pb_climat < 0.05) {
+  tukey_log_pb_climat <- TukeyHSD(anova_log_pb_climat)
+  tukey_groups_log_pb_climat <- multcompLetters(tukey_log_pb_climat$Climat[, "p adj"])$Letters
+  df_Pb$group_climat <- tukey_groups_log_pb_climat[as.character(df_Pb$Climat)]
+} else {
+  df_Pb$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Création du boxplot pour le log(Pb) avec Climat
+p_log_pb_climat <- ggplot(df_Pb, aes(x = Climat, y = log_Pb)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() + 
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "Pb",
+       subtitle = paste("\nANOVA — F =", round(f_value_log_pb_climat, 2), "; p =", format(p_value_log_pb_climat, digits = 2, eps=0.001)),
+       x = "", y = "Log(Pb en mg/kg)") +
+  geom_text(aes(label = group_climat, y = max(log_Pb, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de l'ANOVA
+summary_anova_log_pb_climat
+par(mfrow = c(2, 2))
+plot(anova_log_pb_climat)
+
+# 📌 Affichage du boxplot
+print(p_log_pb_climat)
+```
+
+
+```{r}
+# 📊 Transformation logarithmique des valeurs de As
+df_As <- df_As %>%
+  mutate(log_As = log10(As + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(As) en fonction du Climat
+anova_log_as_climat <- aov(log_As ~ Climat, data = df_As)
+summary_anova_log_as_climat <- summary(anova_log_as_climat)
+f_value_log_as_climat <- summary_anova_log_as_climat[[1]][["F value"]][1]
+p_value_log_as_climat <- summary_anova_log_as_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_as_climat) && p_value_log_as_climat < 0.05) {
+  tukey_log_as_climat <- TukeyHSD(anova_log_as_climat)
+  tukey_groups_log_as_climat <- multcompLetters(tukey_log_as_climat$Climat[, "p adj"])$Letters
+  df_As$group_climat <- tukey_groups_log_as_climat[as.character(df_As$Climat)]
+} else {
+  df_As$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Test de Kruskal-Wallis pour le log(As) en fonction du Climat
+kruskal_log_as_climat <- kruskal.test(log_As ~ Climat, data = df_As)
+kw_stat_as <- kruskal_log_as_climat$statistic
+kw_pvalue_as <- kruskal_log_as_climat$p.value
+
+# 📌 Vérifier si le test est significatif avant le post-hoc
+if (!is.na(kw_pvalue_as) && kw_pvalue_as < 0.05) {
+  posthoc_log_as_climat <- dunn_test(df_As, log_As ~ Climat, p.adjust.method = "bonferroni")
+  posthoc_groups_log_as_climat <- multcompLetters(setNames(posthoc_log_as_climat$p.adj,
+                                                            paste(posthoc_log_as_climat$group1, posthoc_log_as_climat$group2, sep = "-")))$Letters
+  df_As$group_climat <- posthoc_groups_log_as_climat[as.character(df_As$Climat)]
+} else {
+  df_As$group_climat <- NA  # Pas de groupe car Kruskal-Wallis non significatif
+}
+
+# 📊 Création du boxplot pour le log(As) avec Climat
+p_log_as_climat <- ggplot(df_As, aes(x = Climat, y = log_As)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "As",
+       subtitle = paste("\nKruskal−Wallis — Chi² =", round(kw_stat_as, 2), "; p =", format(kw_pvalue_as, digits = 2, eps=0.001)),
+       x = "", y = "Log(As mg/kg)") +
+  geom_text(aes(label = group_climat, y = max(log_As, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de Kruskal-Wallis
+kruskal_log_as_climat
+par(mfrow = c(2, 2))
+hist(df_As$log_As, main = "Distribution Log-As", col = "#E69F00", border = "black")
+qqnorm(df_As$log_As)
+qqline(df_As$log_As, col = "red")
+boxplot(df_As$log_As ~ df_As$Climat, main = "Boxplot Log(As)", col = "#56B4E9")
+
+# 📌 Affichage du boxplot
+print(p_log_as_climat)
+```
+
+```{r}
+# 📊 Transformation logarithmique des valeurs de Cu
+df_Cu <- df_Cu %>%
+  mutate(log_Cu = log10(Cu + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(Cu) en fonction du Climat
+anova_log_cu_climat <- aov(log_Cu ~ Climat, data = df_Cu)
+summary_anova_log_cu_climat <- summary(anova_log_cu_climat)
+f_value_log_cu_climat <- summary_anova_log_cu_climat[[1]][["F value"]][1]
+p_value_log_cu_climat <- summary_anova_log_cu_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_cu_climat) && p_value_log_cu_climat < 0.04) {
+  tukey_log_cu_climat <- TukeyHSD(anova_log_cu_climat)
+  tukey_groups_log_cu_climat <- multcompLetters(tukey_log_cu_climat$Climat[, "p adj"])$Letters
+  df_Cu$group_climat <- tukey_groups_log_cu_climat[as.character(df_Cu$Climat)]
+} else {
+  df_Cu$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Création du boxplot pour le log(Cu) avec Climat
+p_log_cu_climat <- ggplot(df_Cu, aes(x = Climat, y = log_Cu)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+        plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+        plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "Cu",
+       subtitle = paste("\nANOVA — F =", round(f_value_log_cu_climat, 2), "; p =", format.pval(p_value_log_cu_climat, digits = 2, eps=0.001)),
+       x = "", y = "Log(Cu en mg/kg)") +
+  geom_text(aes(label = group_climat, y = max(log_Cu, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de l'ANOVA
+summary_anova_log_cu_climat
+par(mfrow = c(2, 2))
+plot(anova_log_cu_climat)
+
+# 📌 Affichage du boxplot
+print(p_log_cu_climat)
+```
+
+```{r}
+# 📊 Transformation logarithmique des valeurs de Zn
+df_Zn <- df_Zn %>%
+  mutate(log_Zn = log10(Zn + 1))  # Ajout de +1 pour éviter les erreurs sur les valeurs nulles
+
+# 📊 Analyse ANOVA pour le log(Zn) en fonction du Climat
+anova_log_zn_climat <- aov(log_Zn ~ Climat, data = df_Zn)
+summary_anova_log_zn_climat <- summary(anova_log_zn_climat)
+f_value_log_zn_climat <- summary_anova_log_zn_climat[[1]][["F value"]][1]
+p_value_log_zn_climat <- summary_anova_log_zn_climat[[1]][["Pr(>F)"]][1]
+
+# 📌 Vérifier si l'ANOVA est significative avant d'appliquer le test de Tukey
+if (!is.na(p_value_log_zn_climat) && p_value_log_zn_climat < 0.05) {
+  tukey_log_zn_climat <- TukeyHSD(anova_log_zn_climat)
+  tukey_groups_log_zn_climat <- multcompLetters(tukey_log_zn_climat$Climat[, "p adj"])$Letters
+  df_Zn$group_climat <- tukey_groups_log_zn_climat[as.character(df_Zn$Climat)]
+} else {
+  df_Zn$group_climat <- NA  # Pas de groupe car ANOVA non significative
+}
+
+# 📊 Création du boxplot pour le log(Zn) avec Climat
+p_log_zn_climat <- ggplot(df_Zn, aes(x = Climat, y = log_Zn)) +
+  geom_boxplot(fill = "#FBE3D6") +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "blue") +
+  theme_classic() +
+  theme(
+      plot.title = element_text(hjust = 0, size = 13, face = "bold"),
+      plot.subtitle = element_text(hjust = 0, size = 12)
+    )+
+  coord_flip() +
+  labs(title = "Zn",
+       subtitle = paste("\nANOVA — F =", round(f_value_log_zn_climat, 2), "; p =", format.pval(p_value_log_zn_climat, digits = 2, eps=0.001)),
+       x = "", y = "Log(Zn en mg/kg)") +
+  geom_text(aes(label = group_climat, y = max(log_Zn, na.rm = TRUE) + 0.2), vjust = -0.5, na.rm = TRUE, color = "black")
+
+# 📊 Affichage des résultats et des graphiques de diagnostic de l'ANOVA
+summary_anova_log_zn_climat
+par(mfrow = c(2, 2))
+plot(anova_log_zn_climat)
+
+# 📌 Affichage du boxplot
+print(p_log_zn_climat)
+```
+```{r}
+# 📂 Définir le chemin d'exportation
+pdf("D:/Meta_analyse/diagnostic_anova.pdf", width = 10, height = 8)
+
+# 📊 Générer les graphiques de diagnostic pour chaque variable
+par(mfrow = c(2, 2))  # Affichage 2x2 des graphiques
+
+plot(anova_ph_climat, main = "Diagnostic ANOVA - pH")
+plot(anova_log_ce_climat, main = "Diagnostic ANOVA - CE")
+plot(anova_log_cec_climat, main = "Diagnostic ANOVA - CEC")
+plot(anova_log_mo_climat, main = "Diagnostic ANOVA - MO")
+plot(anova_log_pb_climat, main = "Diagnostic ANOVA - Pb")
+plot(anova_log_as_climat, main = "Diagnostic ANOVA - As")
+plot(anova_log_cu_climat, main = "Diagnostic ANOVA - Cu")
+plot(anova_log_zn_climat, main = "Diagnostic ANOVA - Zn")
+
+# 🚀 Fermer l'enregistrement du fichier PDF
+dev.off()
+
+# 📌 Message de confirmation
+message("✅ Exportation réussie : fichier PDF enregistré à 'D:/Meta_analyse/diagnostic_anova.pdf'")
+```
+
+
+```{r fig.width=15, fig.height=15, echo=TRUE, message=FALSE, warning=FALSE}
+# 📊 Affichage des graphiques des paramètres environnementaux
+plot_grid(
+  plot_grid(p_ph_climat, p_log_ce_climat, nrow = 1),
+  plot_grid(p_log_cec_climat, p_log_mo_climat, nrow = 1),
+  plot_grid(p_log_pb_climat, p_log_as_climat, nrow = 1), 
+  plot_grid(p_log_cu_climat, p_log_zn_climat, nrow = 1), 
+  ncol = 1,
+  rel_heights = c(1, 1, 1, 1)  # Hauteur égale pour toutes les rangées
+)
+```
+
+
+
